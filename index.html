@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#05070a">
+<title>Luftharpa – trance &amp; techno i luften</title>
+<style>
+  :root{--fg:#eafff0;--acc:#3cff8f;--acc2:#b06bff;--bg:#05070a;--rec:#ff3b5c}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden;
+    -webkit-user-select:none;user-select:none;overscroll-behavior:none}
+  video{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none}
+  canvas{position:fixed;inset:0;width:100vw;height:100vh;touch-action:none;cursor:crosshair}
+  #panel{position:fixed;left:50%;bottom:calc(10px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(980px,calc(100vw - 16px));
+    background:rgba(8,12,16,.78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:8px}
+  #panel.hidden .rows{display:none}
+  .rows{display:flex;flex-direction:column;gap:6px}
+  .row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center}
+  .row label{display:flex;align-items:center;gap:5px;opacity:.9;font-size:13px}
+  select,button{background:#141b22;color:var(--fg);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:0 12px;min-height:38px;font:inherit;cursor:pointer}
+  button:active{transform:scale(.97)}
+  button.on{background:var(--acc);color:#04140a;border-color:var(--acc);font-weight:700}
+  button.rec{background:var(--rec);border-color:var(--rec);color:#fff;font-weight:700}
+  button.armed{border-color:var(--rec);color:var(--rec);font-weight:700;animation:blink .5s infinite alternate}
+  button.big{font-weight:700;border-color:var(--acc2)}
+  button.build.on{background:var(--acc2);border-color:var(--acc2);color:#fff}
+  @keyframes blink{to{opacity:.4}}
+  input[type=range]{width:90px;accent-color:var(--acc)}
+  #toggle{position:absolute;right:8px;top:-44px;min-height:36px;background:rgba(8,12,16,.78)}
+  #status{position:fixed;top:calc(10px + env(safe-area-inset-top));right:14px;font-size:12px;opacity:.8;pointer-events:none;text-shadow:0 1px 2px #000;text-align:right;max-width:60vw}
+  #start{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 35%,#1a0d2e,#05070a 70%);z-index:10;padding:20px;overflow:auto}
+  #start .box{max-width:560px;text-align:center}
+  #start h1{font-size:44px;margin:0 0 4px;letter-spacing:.5px}
+  #start h1 span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  #start ul{text-align:left;margin:16px auto;padding-left:20px;line-height:1.65;opacity:.92}
+  #go{font-size:18px;padding:0 30px;min-height:52px;background:linear-gradient(90deg,var(--acc),#6bffd8);color:#04140a;border:none;font-weight:800;border-radius:14px}
+  #err{color:#ff8a8a;margin-top:12px;min-height:1em}
+  kbd{background:#1b242d;border-radius:4px;padding:1px 5px;font-size:12px}
+  @media (max-width:700px){ select,button{min-height:34px;padding:0 9px;font-size:13px} input[type=range]{width:70px} }
+</style>
+</head>
+<body>
+<video id="v" playsinline muted autoplay></video>
+<canvas id="c"></canvas>
+<div id="status"></div>
+
+<div id="start"><div class="box">
+  <h1>Luft<span>harpa</span></h1>
+  <div>Trance &amp; techno – spänn strängar i luften och spela på dem.</div>
+  <ul>
+    <li><b>Ny sträng:</b> nyp (tumme + pekfinger) med båda händerna och släpp. Eller nyp, dra och släpp med en hand.</li>
+    <li><b>Spela:</b> dra en fingertopp tvärs över en sträng. Kort sträng = hög ton.</li>
+    <li><b>Flytta:</b> nyp i en ände av en sträng och dra den.</li>
+    <li><b>Ta bort:</b> håll en knuten näve över strängen en halv sekund.</li>
+    <li><b>Beat → Spela in:</b> starta ett beat, tryck ● Spela in och spela – 2 takter loopas. Lägg på fler lager.</li>
+    <li><b>Build-up:</b> trumvirvel och riser i 4 takter, sedan DROP.</li>
+    <li>Touch/mus: dra över strängarna för att spela, dubbeltryck på en sträng tar bort den.</li>
+  </ul>
+  <button id="go">Starta kamera &amp; ljud</button>
+  <div id="err"></div>
+  <div style="margin-top:10px;opacity:.6;font-size:12px">Chrome på dator eller Safari på iPad. På iPad: stäng av ljudlös-läget. Allt körs lokalt – ingen video lämnar enheten.</div>
+</div></div>
+
+<div id="panel">
+  <button id="toggle" title="Visa/dölj kontroller">☰</button>
+  <div class="rows">
+    <div class="row">
+      <label>Stil <select id="style"></select></label>
+      <button id="beat" class="big">▶ Beat</button>
+      <label>BPM <input id="bpm" type="range" min="100" max="160" value="138"><span id="bpmv">138</span></label>
+      <label>Ackord <select id="prog"></select></label>
+      <button id="pad">Pad</button>
+      <button id="build" class="build">Build-up ↑</button>
+    </div>
+    <div class="row">
+      <label>Ljud <select id="sound">
+        <option value="pluck">Trance-pluck</option>
+        <option value="supersaw">Supersaw</option>
+        <option value="acid">Acid 303</option>
+        <option value="string">Sträng</option>
+        <option value="bell">Klocka</option>
+      </select></label>
+      <label>Skala <select id="scale"></select></label>
+      <label>Ton <select id="root"></select></label>
+      <label>Filter <input id="filter" type="range" min="0" max="100" value="100"></label>
+    </div>
+    <div class="row">
+      <button id="rec">● Spela in</button>
+      <button id="quant" class="on">Kvantisera</button>
+      <button id="undoLoop">↶ Loop-lager</button>
+      <button id="ptr">Touch: spela</button>
+      <button id="undo">↶ Sträng</button>
+      <button id="clear">Rensa</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const C = $('c'), X = C.getContext('2d'), V = $('v'), statusEl = $('status');
+let W = 0, H = 0, DPR = 1;
+function resize(){ DPR = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight;
+  C.width = W*DPR; C.height = H*DPR; X.setTransform(DPR,0,0,DPR,0,0); }
+addEventListener('resize', resize); resize();
+const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+function store(k,v){ try{ localStorage.setItem('luftharpa.'+k, JSON.stringify(v)); }catch(e){} }
+function load(k,d){ try{ const v = localStorage.getItem('luftharpa.'+k); return v ? JSON.parse(v) : d; }catch(e){ return d; } }
+
+/* ================= Music theory ================= */
+const SCALES = {
+  'Naturlig moll':[0,2,3,5,7,8,10], 'Moll pentatonisk':[0,3,5,7,10], 'Harmonisk moll':[0,2,3,5,7,8,11],
+  'Frygisk':[0,1,3,5,7,8,10], 'Dorisk':[0,2,3,5,7,9,10], 'Dur pentatonisk':[0,2,4,7,9]
+};
+const NOTE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+// progressions as semitone offsets from root, with chord quality
+const PROGS = {
+  'Episk (i–VI–III–VII)':[[0,'m'],[8,'M'],[3,'M'],[10,'M']],
+  'Euforisk (VI–VII–i–i)':[[8,'M'],[10,'M'],[0,'m'],[0,'m']],
+  'Mörk (i–VI–VII–v)':[[0,'m'],[8,'M'],[10,'M'],[7,'m']],
+  'Hypnotisk (i–i–VI–VII)':[[0,'m'],[0,'m'],[8,'M'],[10,'M']],
+  'Bara grundton':[[0,'m']]
+};
+const midiToFreq = m => 440*Math.pow(2,(m-69)/12);
+const noteName = m => NOTE[((m%12)+12)%12] + (Math.floor(m/12)-1);
+const scaleSel = $('scale'), rootSel = $('root'), progSel = $('prog'), soundSel = $('sound'), styleSel = $('style');
+for (const k in SCALES) scaleSel.add(new Option(k,k));
+for (const k in PROGS) progSel.add(new Option(k,k));
+NOTE.forEach((n,i)=>rootSel.add(new Option(n,i)));
+const rootSemi = () => +rootSel.value;
+
+function noteForLength(len){
+  const diag = Math.hypot(W,H);
+  const n = clamp((len/diag - 0.07) / (0.6 - 0.07), 0, 1);
+  const sc = SCALES[scaleSel.value], steps = sc.length*3;
+  const idx = Math.round((1-n)*(steps-1));
+  const base = 45 + ((rootSemi() - 9 + 12) % 12);          // A2..G#3
+  return base + sc[idx % sc.length] + 12*Math.floor(idx / sc.length);
+}
+
+/* ================= Styles ================= */
+// 16-step patterns. bass: x = root, o = octave up
+const STYLES = {
+  trance:     {name:'Trance', bpm:138, kick:'x...x...x...x...', clap:'....x.......x...', ohat:'..x...x...x...x.', chat:'x.xxx.xxx.xxx.xx', ride:'', shaker:'',
+               bass:'..xo..xo..xo..xo', btype:'offbeat', ktype:'normal', duck:.8, pad:true, sound:'pluck'},
+  uplifting:  {name:'Uplifting trance', bpm:140, kick:'x...x...x...x...', clap:'....x.......x...', ohat:'..x...x...x...x.', chat:'xxxxxxxxxxxxxxxx', ride:'x.x.x.x.x.x.x.x.', shaker:'',
+               bass:'.xxx.xxx.xxx.xxx', btype:'offbeat', ktype:'normal', duck:.85, pad:true, sound:'supersaw'},
+  psy:        {name:'Psytrance', bpm:145, kick:'x...x...x...x...', clap:'............x...', ohat:'..x...x...x...x.', chat:'x.xxx.xxx.xxx.xx', ride:'', shaker:'',
+               bass:'.xxx.xxx.xxx.xxx', btype:'rolling', ktype:'psy', duck:.35, pad:false, sound:'acid'},
+  progressive:{name:'Progressive', bpm:128, kick:'x...x...x...x...', clap:'....x.......x...', ohat:'..x...x...x...x.', chat:'', ride:'x.x.x.x.x.x.x.x.', shaker:'xxxxxxxxxxxxxxxx',
+               bass:'..x...x...x...x.', btype:'offbeat', ktype:'normal', duck:.75, pad:true, sound:'pluck'},
+  melodic:    {name:'Melodisk techno', bpm:124, kick:'x...x...x...x...', clap:'....x.......x...', ohat:'..x...x...x...x.', chat:'', ride:'', shaker:'xxxxxxxxxxxxxxxx',
+               bass:'..x...x...x...x.', btype:'long', ktype:'normal', duck:.7, pad:true, sound:'string'},
+  techno:     {name:'Techno', bpm:130, kick:'x...x...x...x...', clap:'....x.......x...', ohat:'..x...x...x...x.', chat:'x.x.x.x.x.x.x.x.', ride:'', shaker:'',
+               bass:'.xx..xx..xx..xx.', btype:'rumble', ktype:'normal', duck:.55, pad:false, sound:'acid'},
+  hard:       {name:'Hård techno', bpm:150, kick:'x...x...x...x...', clap:'....x.......x...', ohat:'..x...x...x...x.', chat:'xxxxxxxxxxxxxxxx', ride:'', shaker:'',
+               bass:'.xx..xx..xx..xx.', btype:'rumble', ktype:'hard', duck:.5, pad:false, sound:'supersaw'},
+  breakdown:  {name:'Breakdown (utan kick)', bpm:null, kick:'', clap:'', ohat:'', chat:'', ride:'', shaker:'',
+               bass:'', btype:'offbeat', ktype:'normal', duck:0, pad:true, sound:'pluck'}
+};
+for (const k in STYLES) styleSel.add(new Option(STYLES[k].name, k));
+
+/* ================= Audio graph ================= */
+let AC, masterIn, hpf, lpf, duck, musicBus, drumBus, dsend, rsend, delay, noiseBuf, distCurve;
+function makeIR(sec){
+  const len = AC.sampleRate*sec, b = AC.createBuffer(2,len,AC.sampleRate);
+  for (let ch=0; ch<2; ch++){ const d=b.getChannelData(ch);
+    for (let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6); }
+  return b;
+}
+function initAudio(){
+  if (AC) return;
+  AC = new (window.AudioContext||window.webkitAudioContext)();
+  const comp = AC.createDynamicsCompressor(); comp.threshold.value=-12; comp.ratio.value=6; comp.attack.value=0.003; comp.release.value=0.15;
+  const outGain = AC.createGain(); outGain.gain.value = 0.9;
+  lpf = AC.createBiquadFilter(); lpf.type='lowpass'; lpf.frequency.value=20000; lpf.Q.value=1.5;
+  hpf = AC.createBiquadFilter(); hpf.type='highpass'; hpf.frequency.value=10;
+  masterIn = AC.createGain();
+  masterIn.connect(hpf); hpf.connect(lpf); lpf.connect(comp); comp.connect(outGain); outGain.connect(AC.destination);
+  drumBus = AC.createGain(); drumBus.gain.value = 0.9; drumBus.connect(masterIn);
+  duck = AC.createGain(); duck.connect(masterIn);
+  musicBus = AC.createGain(); musicBus.connect(duck);
+  // dotted-eighth delay (trance classic)
+  delay = AC.createDelay(2); const fb = AC.createGain(); fb.gain.value=.42;
+  const dlp = AC.createBiquadFilter(); dlp.type='lowpass'; dlp.frequency.value=3200;
+  const dhp = AC.createBiquadFilter(); dhp.type='highpass'; dhp.frequency.value=300;
+  delay.connect(dlp); dlp.connect(dhp); dhp.connect(fb); fb.connect(delay); dhp.connect(duck);
+  dsend = AC.createGain(); dsend.gain.value=.3; dsend.connect(delay);
+  const conv = AC.createConvolver(); conv.buffer = makeIR(3.2);
+  rsend = AC.createGain(); rsend.gain.value=.32; rsend.connect(conv); conv.connect(duck);
+  noiseBuf = AC.createBuffer(1, AC.sampleRate*2, AC.sampleRate);
+  const nd = noiseBuf.getChannelData(0); for (let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;
+  distCurve = new Float32Array(1024); for (let i=0;i<1024;i++){ const x=i/512-1; distCurve[i]=Math.tanh(x*4); }
+  setDelayTime(); applyFilter();
+}
+function setDelayTime(){ if (delay) delay.delayTime.setTargetAtTime(60/bpm*0.75, AC.currentTime, 0.05); }
+function applyFilter(){ if (!lpf) return; const v = +$('filter').value/100;
+  lpf.frequency.setTargetAtTime(120*Math.pow(20000/120, v), AC.currentTime, 0.03); }
+$('filter').oninput = applyFilter;
+
+function voiceOut(pan, sends=1){
+  const out = AC.createGain(), pn = AC.createStereoPanner();
+  pn.pan.value = clamp(pan,-1,1); out.connect(pn); pn.connect(musicBus);
+  if (sends){ const s1=AC.createGain(); s1.gain.value=sends; pn.connect(s1); s1.connect(dsend); s1.connect(rsend); }
+  return {out, pn};
+}
+function ksBuffer(freq, bright, dur){
+  const sr = AC.sampleRate, n = Math.floor(sr*dur), N = Math.max(4, Math.round(sr/freq));
+  const buf = AC.createBuffer(1,n,sr), d = buf.getChannelData(0), ring = new Float32Array(N);
+  let lp = 0; const a = 0.15 + 0.8*bright;
+  for (let i=0;i<N;i++){ lp += a*((Math.random()*2-1)-lp); ring[i]=lp; }
+  const decay = 0.9975 - Math.min(0.006, freq/400000);
+  let p = 0;
+  for (let i=0;i<n;i++){ const x=ring[p], y=ring[(p+1)%N]; d[i]=x; ring[p]=(x+y)*0.5*decay; p=(p+1)%N; }
+  return { buf, rate: freq / (sr/(N+0.5)) };
+}
+const SAW7 = [-22,-13,-6,0,6,13,22];
+
+function play(midi, vel, pan, when, sound){
+  if (!AC) return;
+  const t = when ?? AC.currentTime, f = midiToFreq(midi);
+  sound = sound || soundSel.value;
+  const v = 0.35 + 0.65*vel;
+  const {out, pn} = voiceOut(pan);
+  const end = (node, at) => { node.onended = () => { try{ pn.disconnect(); }catch(e){} }; };
+  if (sound === 'string'){
+    const {buf, rate} = ksBuffer(f, vel, 3.0);
+    const s = AC.createBufferSource(); s.buffer = buf; s.playbackRate.value = rate;
+    const lp = AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 1800 + 7000*vel;
+    s.connect(lp); lp.connect(out); out.gain.value = 0.9*v; s.start(t); end(s);
+  } else if (sound === 'pluck'){       // classic trance pluck
+    const fl = AC.createBiquadFilter(); fl.type='lowpass'; fl.Q.value=7;
+    fl.frequency.setValueAtTime(900 + 7000*vel, t); fl.frequency.exponentialRampToValueAtTime(260, t+0.22);
+    out.gain.setValueAtTime(0.0001,t); out.gain.exponentialRampToValueAtTime(0.16*v,t+0.003);
+    out.gain.exponentialRampToValueAtTime(0.0001,t+0.55);
+    let last;
+    for (const [c,g,oct] of [[-9,1,1],[0,1,1],[9,1,1],[0,.45,2]]){
+      const o=AC.createOscillator(), og=AC.createGain(); o.type='sawtooth'; o.frequency.value=f*oct*Math.pow(2,c/1200); og.gain.value=g;
+      o.connect(og); og.connect(fl); o.start(t); o.stop(t+0.6); last=o; }
+    fl.connect(out); end(last);
+  } else if (sound === 'supersaw'){    // big trance lead
+    const hp=AC.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=180;
+    const fl = AC.createBiquadFilter(); fl.type='lowpass'; fl.Q.value=1;
+    fl.frequency.setValueAtTime(2500 + 6000*vel, t); fl.frequency.exponentialRampToValueAtTime(1600, t+1.0);
+    out.gain.setValueAtTime(0.0001,t); out.gain.exponentialRampToValueAtTime(0.09*v,t+0.008);
+    out.gain.setTargetAtTime(0.0001, t+0.25, 0.28);
+    let last;
+    SAW7.forEach((c,i)=>{ const o=AC.createOscillator(); o.type='sawtooth'; o.frequency.value=f*Math.pow(2,c/1200);
+      const p=AC.createStereoPanner(); p.pan.value=(i-3)/3*0.8; o.connect(p); p.connect(hp); o.start(t); o.stop(t+1.6); last=o; });
+    hp.connect(fl); fl.connect(out); end(last);
+  } else if (sound === 'acid'){
+    const o = AC.createOscillator(); o.type='sawtooth'; o.frequency.value = f/2;
+    const fl = AC.createBiquadFilter(); fl.type='lowpass'; fl.Q.value = 18;
+    fl.frequency.setValueAtTime(250 + 3800*vel, t); fl.frequency.exponentialRampToValueAtTime(140, t+0.28);
+    out.gain.setValueAtTime(0.0001,t); out.gain.exponentialRampToValueAtTime(0.3*v, t+0.005);
+    out.gain.exponentialRampToValueAtTime(0.0001, t+0.45);
+    o.connect(fl); fl.connect(out); o.start(t); o.stop(t+0.5); end(o);
+  } else { // bell (FM)
+    const car = AC.createOscillator(), mod = AC.createOscillator(), mg = AC.createGain();
+    car.frequency.value = f*2; mod.frequency.value = f*2*3.5; mg.gain.setValueAtTime(f*4*v,t);
+    mg.gain.exponentialRampToValueAtTime(1,t+1.5); mod.connect(mg); mg.connect(car.frequency);
+    out.gain.setValueAtTime(0.0001,t); out.gain.exponentialRampToValueAtTime(0.22*v,t+0.003);
+    out.gain.exponentialRampToValueAtTime(0.0001,t+2.2);
+    car.connect(out); car.start(t); mod.start(t); car.stop(t+2.3); mod.stop(t+2.3); end(car);
+  }
+}
+
+/* ================= Drums & bass ================= */
+function kick(t, type){
+  const o=AC.createOscillator(), g=AC.createGain();
+  const P = type==='hard' ? [210,48,0.16,0.55,1.1] : type==='psy' ? [150,50,0.07,0.26,1] : [165,44,0.13,0.45,1];
+  o.frequency.setValueAtTime(P[0],t); o.frequency.exponentialRampToValueAtTime(P[1],t+P[2]);
+  g.gain.setValueAtTime(P[4],t); g.gain.exponentialRampToValueAtTime(0.001,t+P[3]);
+  if (type==='hard'){ const ws=AC.createWaveShaper(); ws.curve=distCurve; const pg=AC.createGain(); pg.gain.value=2.5; const post=AC.createGain(); post.gain.value=.55;
+    o.connect(pg); pg.connect(ws); ws.connect(g); g.connect(post); post.connect(drumBus); }
+  else { o.connect(g); g.connect(drumBus); }
+  // click
+  const c=AC.createBufferSource(); c.buffer=noiseBuf; const cf=AC.createBiquadFilter(); cf.type='highpass'; cf.frequency.value=3000;
+  const cg=AC.createGain(); cg.gain.setValueAtTime(0.25,t); cg.gain.exponentialRampToValueAtTime(0.001,t+0.008);
+  c.connect(cf); cf.connect(cg); cg.connect(drumBus); c.start(t); c.stop(t+0.02);
+  o.start(t); o.stop(t+P[3]+0.05);
+}
+function noiseHit(t, {type='highpass', freq=7500, q=1, gain=.15, len=.05, rev=0, offset=0}){
+  const s=AC.createBufferSource(); s.buffer=noiseBuf; const f=AC.createBiquadFilter(); f.type=type; f.frequency.value=freq; f.Q.value=q;
+  const g=AC.createGain(); g.gain.setValueAtTime(gain,t); g.gain.exponentialRampToValueAtTime(0.001,t+len);
+  s.connect(f); f.connect(g); g.connect(drumBus); if (rev){ const r=AC.createGain(); r.gain.value=rev; g.connect(r); r.connect(rsend); }
+  s.start(t, offset || Math.random()); s.stop(t+len+0.02);
+}
+const chat = (t,acc) => noiseHit(t,{freq:8500,gain:acc?.09:.05,len:.035});
+const ohat = t => noiseHit(t,{freq:7000,gain:.17,len:.2});
+const ride = t => noiseHit(t,{type:'bandpass',freq:9500,q:.8,gain:.07,len:.35});
+const shaker = (t,acc) => noiseHit(t,{type:'bandpass',freq:6000,q:1.5,gain:acc?.08:.045,len:.06});
+function clap(t){
+  const s=AC.createBufferSource(); s.buffer=noiseBuf; const bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1500; bp.Q.value=1.1;
+  const g=AC.createGain(); g.gain.setValueAtTime(0.0001,t);
+  [0,0.011,0.022].forEach(o=>{ g.gain.setValueAtTime(0.4,t+o); g.gain.exponentialRampToValueAtTime(0.06,t+o+0.01); });
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.22); s.connect(bp); bp.connect(g); g.connect(drumBus);
+  const r=AC.createGain(); r.gain.value=.5; g.connect(r); r.connect(rsend); s.start(t, Math.random()); s.stop(t+0.25);
+}
+function snare(t, vol, pitch){
+  noiseHit(t,{type:'bandpass',freq:2500,q:.7,gain:.3*vol,len:.12,rev:.4});
+  const o=AC.createOscillator(), g=AC.createGain(); o.type='triangle'; o.frequency.setValueAtTime(pitch,t); o.frequency.exponentialRampToValueAtTime(pitch*.6,t+.08);
+  g.gain.setValueAtTime(.25*vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+.1); o.connect(g); g.connect(drumBus); o.start(t); o.stop(t+.12);
+}
+function crash(t){ noiseHit(t,{freq:4500,gain:.35,len:2.2,rev:.6}); }
+function bassNote(t, midi, type, s16){
+  const f = midiToFreq(midi), g = AC.createGain(), fl = AC.createBiquadFilter(); fl.type='lowpass';
+  const o = AC.createOscillator(); o.frequency.value = f; let len, src = o;
+  if (type==='rolling'){ o.type='sawtooth'; len=s16*0.85; fl.Q.value=6;
+    fl.frequency.setValueAtTime(1400,t); fl.frequency.exponentialRampToValueAtTime(160,t+len); g.gain.setValueAtTime(0.32,t); }
+  else if (type==='rumble'){ o.type='triangle'; len=s16*1.6; fl.frequency.value=200;
+    const pre=AC.createGain(); pre.gain.value=1.8; const ws=AC.createWaveShaper(); ws.curve=distCurve;
+    o.connect(pre); pre.connect(ws); src = ws; g.gain.setValueAtTime(0.3,t); }
+  else if (type==='long'){ o.type='sawtooth'; len=s16*1.8; fl.Q.value=3;
+    fl.frequency.setValueAtTime(700,t); fl.frequency.exponentialRampToValueAtTime(220,t+len); g.gain.setValueAtTime(0.3,t); }
+  else { o.type='sawtooth'; len=s16*0.9; fl.Q.value=4;
+    fl.frequency.setValueAtTime(900,t); fl.frequency.exponentialRampToValueAtTime(200,t+len); g.gain.setValueAtTime(0.3,t); }
+  g.gain.exponentialRampToValueAtTime(0.001, t+len);
+  src.connect(fl); fl.connect(g); g.connect(masterIn);
+  o.start(t); o.stop(t+len+0.02);
+}
+function chordTones(rootMidi, q){ return [rootMidi, rootMidi + (q==='m'?3:4), rootMidi+7, rootMidi+12]; }
+function padChord(t, rootOff, q, dur){
+  const r = 57 + ((rootSemi() - 9 + 12) % 12) + rootOff; const rr = r > 64 ? r-12 : r;
+  const tones = chordTones(rr, q);
+  const {out} = voiceOut(0, 0.8);
+  const fl=AC.createBiquadFilter(); fl.type='lowpass'; fl.frequency.value=2200; fl.Q.value=.7;
+  out.gain.setValueAtTime(0.0001,t); out.gain.exponentialRampToValueAtTime(0.05,t+0.35);
+  out.gain.setValueAtTime(0.05,t+dur-0.15); out.gain.exponentialRampToValueAtTime(0.0001,t+dur+0.4);
+  for (const m of tones) for (const c of [-14,0,14]){
+    const o=AC.createOscillator(); o.type='sawtooth'; o.frequency.value=midiToFreq(m)*Math.pow(2,c/1200);
+    o.connect(fl); o.start(t); o.stop(t+dur+0.5); }
+  fl.connect(out);
+}
+
+/* ================= Sequencer ================= */
+let bpm = 138, beatOn = false, nextT = 0, step = 0, beatTimer = null, pulse = 0;
+let style = STYLES.trance, padOn = true, quantOn = true;
+let buildState = 'off', buildStart = 0, dropFlash = 0;
+let recState = 'idle', recStart = 0, recLayer = [], loopLayers = [];
+const LOOP = 32;
+const s16 = () => 60/bpm/4;
+const chordAt = st => { const p = PROGS[progSel.value]; return p[Math.floor(st/32) % p.length]; };
+function sideChain(t){
+  if (!style.duck) return; const d = 1 - style.duck, beat = 60/bpm;
+  duck.gain.setValueAtTime(d, t); duck.gain.linearRampToValueAtTime(1, t + beat*0.55);
+}
+function at(t, fn){ setTimeout(fn, Math.max(0, (t - AC.currentTime)*1000)); }
+
+function scheduler(){
+  while (nextT < AC.currentTime + 0.12){
+    const t = nextT, st = step % 16, d = s16();
+    // --- bar boundaries
+    if (st === 0){
+      if (buildState==='armed'){ buildState='on'; buildStart=step; startRiser(t, 16*4*d); }
+      else if (buildState==='on' && step-buildStart >= 64){ buildState='off'; drop(t); }
+      if (step % LOOP === 0){
+        if (recState==='armed'){ recState='rec'; recStart=t; recLayer=[]; at(t, updateRecBtn); }
+        else if (recState==='rec'){ recState='idle'; if (recLayer.length) loopLayers.push(recLayer); recLayer=[]; at(t, updateRecBtn); }
+      }
+      if (padOn && step % 32 === 0){ const [off,q] = chordAt(step); padChord(t, off, q, 32*d); }
+    }
+    const b = buildState==='on' ? step - buildStart : -1;   // build position 0..63
+    const lastBuildBar = b >= 48;
+    // --- drums
+    if (style.kick[st]==='x' && !lastBuildBar){ kick(t, style.ktype); sideChain(t); if (st%4===0) at(t,()=>pulse=1); }
+    if (style.clap[st]==='x' && b<0) clap(t);
+    if (style.ohat[st]==='x') ohat(t);
+    if (style.chat[st]==='x') chat(t, st%4===2);
+    if (style.ride[st]==='x') ride(t);
+    if (style.shaker[st]==='x') shaker(t, st%4===2);
+    // --- bass follows chord
+    const bc = style.bass[st];
+    if ((bc==='x'||bc==='o') && !lastBuildBar){
+      const [off] = chordAt(step); let m = 33 + ((rootSemi()-9+12)%12) + off; if (m>44) m-=12; if (bc==='o') m+=12;
+      bassNote(t, m, style.btype, d);
+    }
+    // --- build-up snare roll
+    if (b >= 0){
+      const bar = Math.floor(b/16), every = [4,2,1,1][bar];
+      if (b % every === 0) snare(t, 0.35 + 0.65*b/64, 180 + b*6);
+      if (bar===3 && b%2===1) snare(t+d/2, 0.9, 180+b*6);
+    }
+    // --- loop playback
+    const ls = step % LOOP;
+    for (const layer of loopLayers) for (const ev of layer){
+      if (Math.floor(ev.pos) === ls){ const tt = t + (ev.pos-ls)*d; play(ev.midi, ev.vel, ev.pan, tt, ev.sound); at(tt, ()=>wiggleNote(ev.midi, ev.vel)); }
+    }
+    nextT += d; step++;
+  }
+}
+function startRiser(t, dur){
+  const s=AC.createBufferSource(); s.buffer=noiseBuf; s.loop=true;
+  const bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=2.5;
+  bp.frequency.setValueAtTime(300,t); bp.frequency.exponentialRampToValueAtTime(9000,t+dur);
+  const g=AC.createGain(); g.gain.setValueAtTime(0.01,t); g.gain.exponentialRampToValueAtTime(0.35,t+dur);
+  s.connect(bp); bp.connect(g); g.connect(lpf); const r=AC.createGain(); r.gain.value=.4; g.connect(r); r.connect(rsend);
+  s.start(t); s.stop(t+dur);
+  hpf.frequency.setValueAtTime(10,t); hpf.frequency.exponentialRampToValueAtTime(900,t+dur);
+}
+function drop(t){
+  hpf.frequency.cancelScheduledValues(t); hpf.frequency.setValueAtTime(10,t);
+  crash(t); at(t,()=>{ dropFlash=1; $('build').classList.remove('on'); });
+}
+function startBeat(){
+  initAudio(); AC.resume();
+  if (beatOn) return;
+  beatOn = true; nextT = AC.currentTime + 0.06; step = 0; beatTimer = setInterval(scheduler, 25);
+  $('beat').classList.add('on'); $('beat').textContent = '■ Stopp';
+}
+function stopBeat(){
+  beatOn = false; clearInterval(beatTimer); $('beat').classList.remove('on'); $('beat').textContent = '▶ Beat';
+  if (recState!=='idle'){ recState='idle'; updateRecBtn(); }
+  if (buildState!=='off'){ buildState='off'; $('build').classList.remove('on'); hpf.frequency.cancelScheduledValues(0); hpf.frequency.value=10; }
+}
+$('beat').onclick = () => beatOn ? stopBeat() : startBeat();
+function setStyle(k, keepSound){
+  style = STYLES[k]; styleSel.value = k;
+  if (style.bpm){ bpm = style.bpm; $('bpm').value = bpm; $('bpmv').textContent = bpm; setDelayTime(); }
+  padOn = style.pad; $('pad').classList.toggle('on', padOn);
+  if (!keepSound) soundSel.value = style.sound;
+  saveSettings();
+}
+styleSel.onchange = () => setStyle(styleSel.value);
+$('bpm').oninput = () => { bpm = +$('bpm').value; $('bpmv').textContent = bpm; setDelayTime(); saveSettings(); };
+$('pad').onclick = () => { padOn = !padOn; $('pad').classList.toggle('on', padOn); };
+$('build').onclick = () => { if (!beatOn) startBeat(); if (buildState==='off'){ buildState='armed'; $('build').classList.add('on'); } };
+$('quant').onclick = () => { quantOn = !quantOn; $('quant').classList.toggle('on', quantOn); };
+$('rec').onclick = () => {
+  if (!beatOn) startBeat();
+  if (recState==='idle') recState='armed';
+  else if (recState==='armed') recState='idle';
+  else { recState='idle'; if (recLayer.length) loopLayers.push(recLayer); recLayer=[]; }
+  updateRecBtn();
+};
+$('undoLoop').onclick = () => { loopLayers.pop(); };
+function updateRecBtn(){ const b=$('rec'); b.classList.remove('rec','armed');
+  if (recState==='armed'){ b.classList.add('armed'); b.textContent='Väntar på takt…'; }
+  else if (recState==='rec'){ b.classList.add('rec'); b.textContent='● REC'; }
+  else b.textContent='● Spela in'; }
+function recordNote(midi, vel, pan, sound){
+  if (recState!=='rec') return;
+  let pos = (AC.currentTime - recStart) / s16();
+  pos = quantOn ? Math.round(pos) : pos;
+  pos = ((pos % LOOP) + LOOP) % LOOP;
+  recLayer.push({pos, midi, vel, pan, sound});
+}
+
+/* ================= Strings (normalized coords) ================= */
+let strings = load('strings', []).map(s => ({a:s.a, b:s.b, amp:0, t0:0, hit:.5, cool:{}}));
+const px = p => ({x:p.x*W, y:p.y*H});
+const nrm = p => ({x:p.x/W, y:p.y/H});
+const sLen = s => dist(px(s.a), px(s.b));
+function saveStrings(){ store('strings', strings.map(s=>({a:s.a,b:s.b}))); }
+function addString(a, b){
+  if (dist(a,b) < 50) return;
+  strings.push({ a:nrm(a), b:nrm(b), amp:0, t0:0, hit:.5, cool:{} });
+  if (strings.length > 16) strings.shift();
+  initAudio(); play(noteForLength(dist(a,b)), 0.2, 0);
+  saveStrings();
+}
+function removeString(s){ const i = strings.indexOf(s); if (i<0) return;
+  const A=px(s.a), B=px(s.b);
+  for (let k=0;k<30;k++){ const t=Math.random(); sparks.push({x:A.x+(B.x-A.x)*t, y:A.y+(B.y-A.y)*t, vx:(Math.random()-.5)*4, vy:(Math.random()-.5)*4, life:1, h:0}); }
+  strings.splice(i,1); saveStrings(); }
+function pluck(s, hit, vel, key){
+  const now = performance.now();
+  if (s.cool[key] && now - s.cool[key] < 140) return;
+  s.cool[key] = now;
+  const m = noteForLength(sLen(s)), pan = (hit.x/W)*2-1, snd = soundSel.value;
+  s.amp = 6 + 18*vel; s.t0 = now; s.hit = hit.t;
+  play(m, vel, pan, undefined, snd); recordNote(m, vel, pan, snd);
+  for (let i=0;i<14;i++){ const an=Math.random()*Math.PI*2, sp=1+Math.random()*4*(0.5+vel);
+    sparks.push({x:hit.x,y:hit.y,vx:Math.cos(an)*sp,vy:Math.sin(an)*sp,life:1,h:hueFor(m)}); }
+}
+function wiggleNote(m, vel){ for (const s of strings) if (noteForLength(sLen(s))===m){ s.amp=4+12*vel; s.t0=performance.now(); s.hit=.5; } }
+const hueFor = m => (m%12)*30 + 140;
+const sparks = [];
+function intersect(p1,p2,q1,q2){
+  const r={x:p2.x-p1.x,y:p2.y-p1.y}, s={x:q2.x-q1.x,y:q2.y-q1.y};
+  const den = r.x*s.y - r.y*s.x; if (Math.abs(den) < 1e-6) return null;
+  const qp={x:q1.x-p1.x,y:q1.y-p1.y};
+  const t = (qp.x*s.y - qp.y*s.x)/den, u = (qp.x*r.y - qp.y*r.x)/den;
+  return (t>=0 && t<=1 && u>=0 && u<=1) ? {x:p1.x+t*r.x, y:p1.y+t*r.y, t:u} : null;
+}
+function segDist(p, a, b){ const dx=b.x-a.x, dy=b.y-a.y, l2=dx*dx+dy*dy||1;
+  const t=clamp(((p.x-a.x)*dx+(p.y-a.y)*dy)/l2,0,1); return Math.hypot(p.x-a.x-t*dx, p.y-a.y-t*dy); }
+function testPluck(prev, cur, dt, key){
+  const d = dist(prev, cur); if (d < 2) return;
+  const vel = Math.min(1, (d / Math.max(dt, 8)) / 2.2);
+  for (const s of strings){ const hit = intersect(prev, cur, px(s.a), px(s.b)); if (hit) pluck(s, hit, vel, key); }
+}
+function nearestEnd(p, maxD){
+  let best=null, bd=maxD;
+  for (const s of strings) for (const e of ['a','b']){ const d = dist(p, px(s[e])); if (d<bd){ bd=d; best={s,e}; } }
+  return best;
+}
+function nearestString(p, maxD){ let best=null, bd=maxD;
+  for (const s of strings){ const d = segDist(p, px(s.a), px(s.b)); if (d<bd){ bd=d; best=s; } } return best; }
+
+/* ================= Hand tracking ================= */
+let landmarker = null, lastVideoTime = -1;
+const hands = {};
+const TIPS = [4,8,12,16,20];
+const CONN = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+let map = {ox:0,oy:0,dw:1,dh:1};
+function updateMap(){ const vw=V.videoWidth||1280, vh=V.videoHeight||720; const s=Math.max(W/vw,H/vh);
+  map={dw:vw*s, dh:vh*s, ox:(W-vw*s)/2, oy:(H-vh*s)/2}; }
+const toScreen = l => ({ x: W - (map.ox + l.x*map.dw), y: map.oy + l.y*map.dh });
+function isFist(P){ const w=P[0]; let c=0;
+  for (const [tip,pip] of [[8,6],[12,10],[16,14],[20,18]]) if (dist(P[tip],w) < dist(P[pip],w)) c++;
+  return c >= 4; }
+
+async function startTracking(){
+  const err = $('err'); err.textContent = '';
+  initAudio(); AC.resume();
+  // iOS: unlock audio with a silent blip
+  try { const o=AC.createOscillator(), g=AC.createGain(); g.gain.value=0.0001; o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime+0.05); } catch(e){}
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    err.textContent = 'Kameran är inte tillgänglig här. På iPad måste sidan öppnas via en https-länk (inte som fil). Du kan spela med touch.';
+    showTouchOnly(); return;
+  }
+  try {
+    statusEl.textContent = 'Startar kamera…';
+    const small = Math.min(screen.width, screen.height) < 900;
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'user', width:{ideal: small?640:960}, height:{ideal: small?480:540} }, audio:false });
+    V.srcObject = stream; await V.play();
+  } catch(e){
+    err.textContent = 'Kunde inte öppna kameran ('+e.name+'). Tillåt kameran – eller spela med touch/mus.';
+    showTouchOnly(); return;
+  }
+  $('start').style.display='none';
+  statusEl.textContent = 'Laddar handspårning…';
+  try {
+    const VER = '0.10.14';
+    const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@'+VER+'/vision_bundle.mjs');
+    const fs = await vision.FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@'+VER+'/wasm');
+    const opts = d => ({ baseOptions:{ modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate:d },
+      runningMode:'VIDEO', numHands:2, minHandDetectionConfidence:0.5, minHandPresenceConfidence:0.5, minTrackingConfidence:0.5 });
+    try { landmarker = await vision.HandLandmarker.createFromOptions(fs, opts('GPU')); }
+    catch(e){ landmarker = await vision.HandLandmarker.createFromOptions(fs, opts('CPU')); }
+    statusEl.textContent = 'Visa händerna för kameran ✋';
+    setTimeout(()=>{ if(statusEl.textContent.startsWith('Visa')) statusEl.textContent=''; }, 5000);
+  } catch(e){
+    statusEl.textContent = 'Handspårningen kunde inte laddas (kräver internet). Touch/mus fungerar.';
+    console.error(e);
+  }
+}
+function showTouchOnly(){
+  const b=document.createElement('button'); b.textContent='Fortsätt utan kamera'; b.style.marginTop='10px';
+  b.onclick=()=>{ $('start').style.display='none'; };
+  $('err').appendChild(document.createElement('br')); $('err').appendChild(b);
+}
+$('go').onclick = startTracking;
+
+let lastFrameT = performance.now();
+function processHands(now){
+  if (!landmarker || V.readyState < 2 || V.currentTime === lastVideoTime) return;
+  lastVideoTime = V.currentTime;
+  const dt = now - lastFrameT; lastFrameT = now;
+  updateMap();
+  let res; try { res = landmarker.detectForVideo(V, now); } catch(e){ return; }
+  const seen = new Set();
+  (res.landmarks||[]).forEach((lm, i) => {
+    let key = (res.handednesses?.[i]?.[0]?.categoryName) || ('h'+i);
+    if (seen.has(key)) key += '2';
+    seen.add(key);
+    const raw = lm.map(toScreen);
+    let h = hands[key];
+    if (!h) h = hands[key] = { pts: raw, pinch:false, start:null, consumed:false, grab:null, fistT:0 };
+    h.prevPts = h.pts;
+    h.pts = h.pts.map((p,j)=>({ x:p.x+(raw[j].x-p.x)*0.6, y:p.y+(raw[j].y-p.y)*0.6 }));
+    const P = h.pts, scale = dist(P[0],P[9]) || 1;
+    h.pinchPt = { x:(P[4].x+P[8].x)/2, y:(P[4].y+P[8].y)/2 };
+    // --- fist = delete
+    h.fist = isFist(P);
+    if (h.fist){
+      if (h.pinch){ h.pinch=false; h.start=null; h.grab=null; h.consumed=false; }
+      h.fistT += dt;
+      const target = nearestString(P[9], 55);
+      h.fistTarget = target;
+      if (target && h.fistT > 450){ removeString(target); h.fistT = 0; }
+      if (!target) h.fistT = Math.min(h.fistT, 200);
+      return;
+    }
+    h.fistT = 0; h.fistTarget = null;
+    // --- pinch with hysteresis
+    const ratio = dist(P[4],P[8]) / scale, was = h.pinch;
+    if (!h.pinch && ratio < 0.28) h.pinch = true;
+    else if (h.pinch && ratio > 0.45) h.pinch = false;
+    if (h.pinch && !was){
+      const g = nearestEnd(h.pinchPt, 45);
+      if (g){ h.grab = g; } else { h.start = {...h.pinchPt}; h.consumed = false; }
+    }
+    if (h.pinch && h.grab){ h.grab.s[h.grab.e] = nrm(h.pinchPt); }
+    if (!h.pinch && was) releasePinch(key);
+    // --- pluck with fingertips
+    for (const tIdx of TIPS){
+      if (h.pinch && (tIdx===4 || tIdx===8)) continue;
+      testPluck(h.prevPts[tIdx], h.pts[tIdx], dt, key+tIdx);
+    }
+  });
+  for (const k in hands){ if (!seen.has(k)){ if (hands[k].pinch) releasePinch(k, true); delete hands[k]; } }
+}
+function pinchingHands(){ return Object.entries(hands).filter(([k,h])=>h.pinch && !h.consumed && !h.grab); }
+function releasePinch(key, lost){
+  const h = hands[key]; if (!h) return;
+  if (h.grab){ h.grab = null; saveStrings(); }
+  else if (!h.consumed){
+    const others = Object.entries(hands).filter(([k,o])=>k!==key && o.pinch && !o.consumed && !o.grab);
+    if (others.length){ addString(h.pinchPt, others[0][1].pinchPt); others[0][1].consumed = true; }
+    else if (!lost && h.start) addString(h.start, h.pinchPt);
+  }
+  h.pinch = false; h.start = null; h.consumed = false;
+}
+
+/* ================= Touch / mouse (multi-touch) ================= */
+let ptrMode = 'play';
+const ptrs = new Map();
+let lastTap = {t:0, x:0, y:0};
+$('ptr').onclick = () => { ptrMode = ptrMode==='play'?'draw':'play';
+  $('ptr').textContent = 'Touch: '+(ptrMode==='play'?'spela':'rita'); $('ptr').classList.toggle('on', ptrMode==='draw'); };
+C.addEventListener('pointerdown', e => {
+  initAudio(); AC.resume();
+  try { C.setPointerCapture(e.pointerId); } catch(_){}
+  const p={x:e.clientX,y:e.clientY}, now=performance.now();
+  // double tap on string = delete
+  if (now-lastTap.t < 320 && dist(p,lastTap) < 30){ const s = nearestString(p, 30); if (s){ removeString(s); lastTap={t:0,x:0,y:0}; return; } }
+  lastTap = {t:now, x:p.x, y:p.y};
+  const st = {prev:p, t:now, draw:null, grab:null};
+  if (ptrMode==='draw' || e.shiftKey){ const g = nearestEnd(p, 35); if (g) st.grab=g; else st.draw={a:p, b:p}; }
+  ptrs.set(e.pointerId, st);
+});
+C.addEventListener('pointermove', e => {
+  const p={x:e.clientX,y:e.clientY}, now=performance.now();
+  let st = ptrs.get(e.pointerId);
+  if (!st){ if (e.pointerType==='mouse'){ st={prev:p,t:now,hover:true}; ptrs.set(e.pointerId, st); } else return; }
+  if (st.grab) st.grab.s[st.grab.e] = nrm(p);
+  else if (st.draw) st.draw.b = p;
+  else testPluck(st.prev, p, now-st.t, 'p'+e.pointerId);
+  st.prev=p; st.t=now;
+});
+function ptrEnd(e){ const st = ptrs.get(e.pointerId); if (!st) return;
+  if (st.draw) addString(st.draw.a, {x:e.clientX,y:e.clientY});
+  if (st.grab) saveStrings();
+  if (e.pointerType==='mouse' && e.type==='pointerup'){ ptrs.set(e.pointerId,{prev:{x:e.clientX,y:e.clientY},t:performance.now(),hover:true}); }
+  else ptrs.delete(e.pointerId); }
+C.addEventListener('pointerup', ptrEnd); C.addEventListener('pointercancel', ptrEnd);
+C.addEventListener('pointerleave', e => { if (e.pointerType==='mouse') ptrs.delete(e.pointerId); });
+
+/* ================= Buttons, keys, settings ================= */
+$('undo').onclick = () => { strings.pop(); saveStrings(); };
+$('clear').onclick = () => { strings.length = 0; saveStrings(); };
+$('toggle').onclick = () => $('panel').classList.toggle('hidden');
+addEventListener('keydown', e => {
+  if (e.target.tagName==='SELECT' || e.target.tagName==='INPUT') return;
+  const k = e.key.toLowerCase();
+  if (k==='z') $('undo').click(); else if (k==='c') $('clear').click();
+  else if (k===' '){ e.preventDefault(); $('beat').click(); }
+  else if (k==='r') $('rec').click(); else if (k==='u') $('build').click(); else if (k==='h') $('toggle').click();
+});
+function saveSettings(){ store('settings', {style:styleSel.value, bpm, scale:scaleSel.value, root:rootSel.value, prog:progSel.value, sound:soundSel.value}); }
+[scaleSel, rootSel, progSel, soundSel].forEach(el => el.addEventListener('change', saveSettings));
+(() => { const s = load('settings', null);
+  setStyle(s && STYLES[s.style] ? s.style : 'trance');
+  scaleSel.value = (s && SCALES[s.scale]) ? s.scale : 'Naturlig moll';
+  rootSel.value = s ? s.root : 9; progSel.value = (s && PROGS[s.prog]) ? s.prog : 'Episk (i–VI–III–VII)';
+  if (s && s.sound) soundSel.value = s.sound;
+  if (s && s.bpm){ bpm = s.bpm; $('bpm').value = bpm; $('bpmv').textContent = bpm; }
+})();
+
+/* ================= Rendering ================= */
+function drawString(A, B, s, now, preview){
+  const dx=B.x-A.x, dy=B.y-A.y, len=Math.hypot(dx,dy); if (len<1) return;
+  const nx=-dy/len, ny=dx/len;
+  const m = noteForLength(len), hue = hueFor(m);
+  const age = (now - s.t0)/1000, amp = preview ? 0 : s.amp*Math.exp(-age*2.6);
+  const col = `hsl(${hue},100%,${preview?75:82}%)`;
+  X.strokeStyle = `hsla(${hue},90%,80%,${preview?.35:.5})`; X.lineWidth=1;
+  const nt = Math.floor(len/22);
+  X.beginPath();
+  for (let i=1;i<nt;i++){ const t=i/nt, x=A.x+dx*t, y=A.y+dy*t, L=(i%5===0)?9:5; X.moveTo(x+nx*L,y+ny*L); X.lineTo(x+nx*2,y+ny*2); }
+  X.stroke();
+  X.save();
+  X.shadowColor = col; X.shadowBlur = preview?6:(10+amp*1.5);
+  X.strokeStyle = col; X.lineWidth = preview?1.5:2.2;
+  if (preview) X.setLineDash([8,7]);
+  X.beginPath();
+  const w = 40 + 60*(1-len/Math.hypot(W,H));
+  for (let i=0;i<=40;i++){ const t=i/40, off = amp*Math.sin(Math.PI*t)*Math.sin(age*w)*(1-0.5*Math.abs(t-s.hit));
+    const x=A.x+dx*t+nx*off, y=A.y+dy*t+ny*off; i?X.lineTo(x,y):X.moveTo(x,y); }
+  X.stroke(); X.restore();
+  for (const p of [A,B]){ X.beginPath(); X.arc(p.x,p.y,6,0,Math.PI*2); X.strokeStyle=col; X.lineWidth=1.5; X.stroke(); }
+  X.font='600 12px system-ui'; X.fillStyle=`hsla(${hue},100%,85%,.9)`; X.fillText(noteName(m), B.x+9, B.y-8);
+}
+const P0 = {t0:0, amp:0, hit:.5};
+function drawHand(h){
+  const P=h.pts;
+  X.strokeStyle = h.fist ? 'rgba(255,70,90,.9)' : 'rgba(60,255,120,.9)'; X.lineWidth=3; X.lineCap='round';
+  X.beginPath(); for (const [a,b] of CONN){ X.moveTo(P[a].x,P[a].y); X.lineTo(P[b].x,P[b].y); } X.stroke();
+  for (let i=0;i<21;i++){ X.beginPath(); X.arc(P[i].x,P[i].y, TIPS.includes(i)?5.5:4,0,Math.PI*2); X.fillStyle = TIPS.includes(i)?'#ff3b3b':'#d81e1e'; X.fill(); }
+  if (h.fist && h.fistTarget){ X.beginPath(); X.arc(P[9].x,P[9].y,26,-Math.PI/2,-Math.PI/2+Math.PI*2*clamp(h.fistT/450,0,1));
+    X.strokeStyle='#ff3b5c'; X.lineWidth=4; X.stroke(); }
+  if (h.pinch){ X.beginPath(); X.arc(h.pinchPt.x,h.pinchPt.y,12,0,Math.PI*2); X.strokeStyle=h.grab?'#b06bff':'#fff'; X.lineWidth=2; X.stroke();
+    X.beginPath(); X.arc(h.pinchPt.x,h.pinchPt.y,5,0,Math.PI*2); X.fillStyle='#ffb36b'; X.fill(); }
+}
+function drawHUD(){
+  const top = 12 + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat'))||0);
+  X.font='700 13px system-ui'; X.textBaseline='top';
+  let txt = beatOn ? `${style.name} · ${bpm} BPM` : 'Beat av';
+  if (beatOn){ const [off,q] = chordAt(Math.max(0,step-1)); txt += ` · ${NOTE[(rootSemi()+off)%12]}${q==='m'?'m':''}`; }
+  X.fillStyle='rgba(234,255,240,.85)'; X.fillText(txt, 14, top);
+  // loop strip
+  if (beatOn){
+    const cw = Math.min(14, (W*0.5)/LOOP), x0 = 14, y0 = top+22, cur = (step-1+LOOP) % LOOP;
+    for (let i=0;i<LOOP;i++){
+      X.fillStyle = i===cur ? (recState==='rec' ? '#ff3b5c' : '#3cff8f') : (i%4===0 ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.12)');
+      X.fillRect(x0+i*cw, y0, cw-2, 6);
+    }
+    for (const layer of loopLayers.concat(recState==='rec'?[recLayer]:[])) for (const ev of layer){
+      X.fillStyle = `hsl(${hueFor(ev.midi)},100%,70%)`; X.fillRect(x0+ev.pos*cw+cw/2-2, y0+9, 3, 3); }
+    if (loopLayers.length){ X.fillStyle='rgba(234,255,240,.6)'; X.font='12px system-ui'; X.fillText(`${loopLayers.length} loop-lager`, x0, y0+16); }
+    if (buildState==='on'){ const b = step - buildStart; X.font='800 22px system-ui'; X.fillStyle='#b06bff';
+      X.textAlign='center'; X.fillText(`BUILD-UP ${Math.min(4,Math.floor(b/16)+1)}/4`, W/2, top+4); X.textAlign='start'; }
+    else if (buildState==='armed'){ X.font='700 15px system-ui'; X.fillStyle='#b06bff'; X.textAlign='center'; X.fillText('Build-up startar vid nästa takt…', W/2, top+4); X.textAlign='start'; }
+  }
+  X.textBaseline='alphabetic';
+}
+function frame(now){
+  processHands(now);
+  X.clearRect(0,0,W,H);
+  if (V.readyState>=2 && V.videoWidth){ updateMap(); X.save(); X.translate(W,0); X.scale(-1,1);
+    X.drawImage(V, map.ox, map.oy, map.dw, map.dh); X.restore(); X.fillStyle='rgba(0,0,0,.42)'; X.fillRect(0,0,W,H); }
+  else { const g=X.createRadialGradient(W/2,H*.4,0,W/2,H/2,Math.max(W,H)*.75); g.addColorStop(0,'#160e26'); g.addColorStop(1,'#05070a'); X.fillStyle=g; X.fillRect(0,0,W,H); }
+  if (pulse>0.01){ X.fillStyle=`rgba(120,90,255,${pulse*0.08})`; X.fillRect(0,0,W,H); pulse*=0.85; }
+  if (dropFlash>0.01){ X.fillStyle=`rgba(255,255,255,${dropFlash*0.5})`; X.fillRect(0,0,W,H);
+    X.font='900 64px system-ui'; X.textAlign='center'; X.fillStyle=`rgba(176,107,255,${dropFlash})`; X.fillText('DROP', W/2, H*0.4); X.textAlign='start'; dropFlash*=0.95; }
+  for (const s of strings) drawString(px(s.a), px(s.b), s, now, false);
+  const ph = pinchingHands();
+  if (ph.length >= 2) drawString(ph[0][1].pinchPt, ph[1][1].pinchPt, P0, now, true);
+  else if (ph.length === 1 && ph[0][1].start) drawString(ph[0][1].start, ph[0][1].pinchPt, P0, now, true);
+  for (const st of ptrs.values()) if (st.draw) drawString(st.draw.a, st.draw.b, P0, now, true);
+  for (const k in hands) drawHand(hands[k]);
+  for (let i=sparks.length-1;i>=0;i--){ const p=sparks[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=.95; p.vy*=.95; p.life-=0.03;
+    if (p.life<=0){ sparks.splice(i,1); continue; }
+    X.fillStyle=`hsla(${p.h},100%,75%,${p.life})`; X.fillRect(p.x-1.5,p.y-1.5,3,3); }
+  drawHUD();
+  if (!strings.length && !Object.keys(hands).length && $('start').style.display==='none' && !statusEl.textContent){
+    X.font='16px system-ui'; X.fillStyle='rgba(234,255,240,.55)'; X.textAlign='center';
+    X.fillText(landmarker ? 'Nyp med båda händerna för att spänna en sträng' : 'Välj "Touch: rita" och dra för att skapa strängar', W/2, H*0.4); X.textAlign='start'; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
